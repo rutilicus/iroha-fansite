@@ -32,6 +32,18 @@ export type SingingStream = {
   video: Video;
 };
 
+export type UisetlistApiData = {
+  time: number;
+  endTime: number;
+  songName: string;
+  artist: string;
+  movie: {
+    movieId: string;
+    name: string;
+    date: string;
+  };
+};
+
 export type SingingStreamForSearch = Pick<SingingStream, 'id' | 'start' | 'video_id' | 'published_at'> & {
   song: Pick<Song, 'title' | 'artist' | 'title_en' | 'artist_en'>;
   video: Pick<Video, 'title' | 'url'>;

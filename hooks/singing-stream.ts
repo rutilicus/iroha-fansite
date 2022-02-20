@@ -1,12 +1,13 @@
 import useSWRImmutable from 'swr/immutable';
-import { supabase } from '../utils/supabaseClient';
-import type { SingingStreamForSearch, SingingStreamForWatch } from './../types/index';
+import type { SingingStreamForSearch, SingingStreamForWatch, UisetlistApiData } from './../types/index';
 
 const PREFIX = 'get-singing-stream-' as const;
 const KEYS = {
   search: `${PREFIX}list`,
   watch: `${PREFIX}watch`,
 } as const;
+
+let songData: Array<UisetlistApiData> = [];
 
 export function useSingingStreamsForSearch(keyword: string = '') {
   const { data, error } = useSWRImmutable(`${KEYS.search}-${keyword}`, getForList);
@@ -25,48 +26,77 @@ export function useSingingStreamForWatch(id: string | undefined) {
   };
 }
 
+async function getDataFromApi() {
+  const response = await fetch("https://uisetlist.herokuapp.com/api/song", {
+    mode: 'cors',
+  });
+  songData = await response.json();
+}
+
 async function getForWatch(key: string) {
+  if (!songData?.length) {
+    await getDataFromApi();
+  }
   const match = new RegExp(`${KEYS.watch}-(.*)`).exec(key);
   if (!match) return null;
 
   const id = match[1];
-  const { data, error } = await supabase
-    .from<SingingStreamForWatch>('singing_stream')
-    .select('id, start, end, video_id, published_at, song(title, artist), video!video_id(title, url)')
-    .eq('id', id)
-    .single();
-
-  if (error) {
-    throw error;
+  let findData = songData.find(
+    (e: UisetlistApiData): boolean => 
+      id === e.movie.movieId.concat(e.time.toString())
+    );
+  if (!findData) {
+    return null;
+  } else {
+    return {
+      id: findData.movie.movieId.concat(findData.time.toString()),
+      start: findData.time,
+      end: findData.endTime,
+      video_id: findData.movie.movieId,
+      published_at: findData.movie.date,
+      song: {
+        title: findData.songName,
+        artist: findData.artist,
+      },
+      video: {
+        title: findData.movie.name,
+        url: "https://www.youtube.com/watch?v=".concat(findData.movie.movieId)
+      },      
+    };
   }
-  return data;
 }
 
 async function getForList(key: string): Promise<SingingStreamForSearch[] | null> {
+  if (!songData?.length) {
+    await getDataFromApi();
+  }
   const match = new RegExp(`${KEYS.search}-(.*)`).exec(key);
   if (!match) return null;
 
   const keyword = match[1];
-  const query = supabase
-    .from('singing_stream')
-    .select('id, start, video_id, published_at, video!video_id(title, url), song(title, artist)');
 
-  if (keyword) {
-    query
-      .select('id, start, video_id, published_at, video!video_id(title, url), song!inner(title, artist)')
-      .ilike('song.title', `%${keyword}%`);
-  }
-  query
-    .order('published_at', {
-      nullsFirst: false,
-      ascending: false,
+  return songData.map(
+    (e: UisetlistApiData): SingingStreamForSearch => ({
+      id: e.movie.movieId.concat(e.time.toString()),
+      start: e.time,
+      video_id: e.movie.movieId,
+      published_at: e.movie.date,
+      song: {
+        title: e.songName,
+        artist: e.artist,
+      },
+      video: {
+        title: e.movie.name,
+        url: "https://www.youtube.com/watch?v=".concat(e.movie.movieId),
+      }
     })
-    .order('start', {
-      ascending: true,
-    });
-
-  const { data, error } = await query;
-
-  if (error) throw error;
-  return data;
+  ).filter(
+    (e: SingingStreamForSearch): boolean => {
+      if (keyword) {
+        return RegExp(keyword).test(e.song.title);
+      } else {
+        return true;
+      }
+    }
+  );
 }
